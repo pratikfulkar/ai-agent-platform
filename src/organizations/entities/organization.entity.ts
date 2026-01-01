@@ -18,7 +18,7 @@ export class Organization {
     name: string;
 
     @CreateDateColumn({ name: 'created_at' })
-    createdAt: Date;s
+    createdAt: Date;
 
     @UpdateDateColumn({ name: 'updated_at' })
     updatedAt: Date;

@@ -7,6 +7,7 @@ import {
     DeleteObjectCommand,
 } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 @Injectable()
 export class S3Service {
@@ -140,7 +141,7 @@ export class S3Service {
     /**
      * Generate a signed URL for accessing a private file.
      * @param key - The key or filename (S3 key)
-     * @param expiresIn - Expiration time in seconds (default: 1 hour)
+     * @param expiresIn - Expiration time in seconds (default: 1 hour = 3600)
      * @returns A signed URL that can be used to access the file
      */
     async getSignedUrl(key: string, expiresIn: number = 3600): Promise<string> {
@@ -150,18 +151,35 @@ export class S3Service {
                 Key: key,
             });
 
-            // Note: This requires @aws-sdk/s3-request-presigner package
-            // For now, returning the regular URL. Install the package to enable signed URLs:
-            // npm install @aws-sdk/s3-request-presigner
-            // Then uncomment the following:
-            // const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
-            // return await getSignedUrl(this.s3Client, command, { expiresIn });
+            // Generate signed URL that expires after specified time
+            const signedUrl = await getSignedUrl(this.s3Client, command, { expiresIn });
 
-            // Temporary: return regular URL (won't work for private files)
-            return `https://${this.bucketName}.s3.${this.region}.amazonaws.com/${key}`;
+            this.logger.log(`Generated signed URL for: ${key} (expires in ${expiresIn}s)`);
+            return signedUrl;
         } catch (error: any) {
             this.logger.error(`Failed to generate signed URL: ${error.message}`, error.stack);
             throw new Error(`Failed to generate signed URL: ${error.message}`);
+        }
+    }
+
+    /**
+     * Extract S3 key from a full S3 URL
+     * @param url - Full S3 URL (e.g., https://bucket.s3.region.amazonaws.com/key)
+     * @returns The S3 key (filename path)
+     */
+    extractKeyFromUrl(url: string): string {
+        try {
+            // Extract key from S3 URL (format: https://bucket.s3.region.amazonaws.com/key)
+            const urlParts = url.split('.amazonaws.com/');
+            if (urlParts.length > 1) {
+                return urlParts[1];
+            }
+            // If URL format is different, try to extract from path
+            const urlObj = new URL(url);
+            return urlObj.pathname.substring(1); // Remove leading slash
+        } catch (error) {
+            this.logger.error(`Failed to extract key from URL: ${url}`);
+            throw new Error('Invalid S3 URL format');
         }
     }
 }

@@ -1,11 +1,21 @@
 import {
-    Controller, Post, Get, Delete, Param, Query, Body, UseInterceptors, UploadedFile, ParseUUIDPipe, HttpCode, HttpStatus, BadRequestException
-} from '@nestjs/common'
+    Controller,
+    Post,
+    Get,
+    Delete,
+    Param,
+    Query,
+    UseInterceptors,
+    UploadedFile,
+    ParseUUIDPipe,
+    HttpCode,
+    HttpStatus,
+    BadRequestException,
+    Body,
+} from '@nestjs/common';
 import { DocumentsService } from './documents.service';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { error } from 'console';
-import { useContainer } from 'class-validator';
-import { User } from 'src/users/entities/user.entity';
+import { UploadDocumentDto } from './dto/upload-document.dto';
 
 @Controller('documents')
 export class DocumentsController {
@@ -15,29 +25,28 @@ export class DocumentsController {
     @UseInterceptors(FileInterceptor('file'))
     async uploadDocument(
         @UploadedFile() file: Express.Multer.File,
-        @Body('organizationId') organizationId: string,
-        @Body('userId', ParseUUIDPipe) userId: string,
-        @Body('title') title: string,
-        @Body('description') description?: string
+        @Body() uploadDto: UploadDocumentDto,
     ) {
+        // Validate file (file validation can't be done with DTO for multipart/form-data)
         if (!file) {
-            throw new BadRequestException('File is Required!');
+            throw new BadRequestException('File is required');
         }
-        if (!title) {
-            throw new BadRequestException('Title is Required!!');
-        }
+
+        // DTO validation is automatic via ValidationPipe in main.ts
+        // Extract values from DTO
+        const { userId, organizationId, title, description } = uploadDto;
+
         return this.documentSerive.uploadDocument(
             {
                 buffer: file.buffer,
                 mimetype: file.mimetype,
                 size: file.size,
-                originalname: file.originalname
-
+                originalname: file.originalname,
             },
-            organizationId,
+            organizationId || '', // Handle optional organizationId
             userId,
             title,
-            description
+            description,
         );
     }
 

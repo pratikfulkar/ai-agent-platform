@@ -29,34 +29,58 @@ export class DocumentsService {
         const document = this.documentRepository.create({
             title,
             content: description || '',
-            url: fileUrl,
+            url: fileUrl, // Store the regular URL in database
             userId,
             organizationId,
             owner: { id: userId } as any, // TypeORM will handle the relation
             organization: organizationId ? { id: organizationId } as any : undefined,
         });
 
-        return this.documentRepository.save(document);
+        const savedDocument = await this.documentRepository.save(document);
+
+        // Generate signed URL for immediate access
+        const s3Key = this.s3Service.extractKeyFromUrl(fileUrl);
+        savedDocument.url = await this.s3Service.getSignedUrl(s3Key, 3600); // 1 hour expiry
+
+        return savedDocument;
     }
 
     /**
      * Get all documents for a user
      */
     async getUserDocuments(userId: string): Promise<Document[]> {
-        return this.documentRepository.find({
+        const documents = await this.documentRepository.find({
             where: { userId },
             relations: ['owner'],
         });
+
+        // Generate signed URLs for each document
+        for (const doc of documents) {
+            if (doc.url) {
+                const s3Key = this.s3Service.extractKeyFromUrl(doc.url);
+                doc.url = await this.s3Service.getSignedUrl(s3Key, 3600); // 1 hour expiry
+            }
+        }
+
+        return documents;
     }
 
     /**
      * Get a document by ID
      */
     async getDocumentById(id: string, userId: string): Promise<Document | null> {
-        return this.documentRepository.findOne({
+        const document = await this.documentRepository.findOne({
             where: { id, userId },
             relations: ['owner'],
         });
+
+        if (document && document.url) {
+            // Generate signed URL for secure access
+            const s3Key = this.s3Service.extractKeyFromUrl(document.url);
+            document.url = await this.s3Service.getSignedUrl(s3Key, 3600); // 1 hour expiry
+        }
+
+        return document;
     }
 
     /**
@@ -73,12 +97,8 @@ export class DocumentsService {
 
         // Extract S3 key from URL and delete from S3
         try {
-            // Extract key from S3 URL (format: https://bucket.s3.region.amazonaws.com/key)
-            const urlParts = document.url.split('.amazonaws.com/');
-            if (urlParts.length > 1) {
-                const s3Key = urlParts[1];
-                await this.s3Service.deleteFile(s3Key);
-            }
+            const s3Key = this.s3Service.extractKeyFromUrl(document.url);
+            await this.s3Service.deleteFile(s3Key);
         } catch (error) {
             // Log error but don't fail the deletion if S3 delete fails
             console.error('Failed to delete file from S3:', error);
